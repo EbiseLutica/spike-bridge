@@ -18,7 +18,11 @@ spike/
     secrets.h.example   Wi-Fi 設定のひな形 (secrets.h にコピーして使う)
   client/
     SpikeClient.csproj
-    Program.cs / MainForm.cs / HidMap.cs
+    Program.cs        エントリポイント(引数の解釈)
+    MainForm.cs       UI と、フック / 送信の配線
+    KeyboardHook.cs   低レベルキーボードフック(Win32 呼び出し)
+    BridgeSender.cs   キー状態の保持と Pico への UDP 送信
+    HidMap.cs         スキャンコード → HID Usage ID の変換
 ```
 
 `bridge.ino` というファイル名なのは、Arduino のスケッチは「フォルダ名と同名の .ino」が必須なため。
