@@ -1,0 +1,12 @@
+# Wi-Fi credentials (copy spike/bridge/secrets.h.example to secrets.h)
+spike/bridge/secrets.h
+
+# Build output
+bin/
+obj/
+build/
+*.uf2
+
+# IDE
+.vs/
+*.user
