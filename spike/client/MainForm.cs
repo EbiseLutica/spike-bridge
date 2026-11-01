@@ -22,7 +22,7 @@ internal sealed class MainForm : Form
 
     private readonly TextBox hostBox = new();
     private readonly ComboBox layoutBox = new();
-    private readonly CheckBox capture = new();
+    private readonly Button captureButton = new();
     private readonly Label status = new();
 
     public MainForm(AppSettings settings)
@@ -71,29 +71,30 @@ internal sealed class MainForm : Form
             };
         }
 
-        capture.Text = "キー入力を Switch へ送る(解除はマウスでクリック)";
-        capture.AutoSize = true;
-        capture.Location = new Point(12, 80);
-        capture.Checked = true;
-        capture.ImeMode = ImeMode.Disable;
-        capture.CheckedChanged += (_, _) =>
+        captureButton.Text = "接続";
+        captureButton.Location = new Point(12, 80);
+        captureButton.Size = new Size(128, 32);
+        captureButton.ImeMode = ImeMode.Disable;
+        captureButton.Click += (_, _) =>
         {
-            if (capture.Checked) StartSending();
+            if (sender == null)
+                StartSending();
             else StopSending();
         };
 
         status.AutoSize = false;
         status.Location = new Point(12, 112);
         status.Size = new Size(356, 60);
+        status.BorderStyle = BorderStyle.Fixed3D;
 
-        Controls.AddRange(new Control[] { hostLabel, hostBox, layoutLabel, layoutBox, capture, status });
-        ActiveControl = capture;
+        Controls.AddRange(new Control[] { hostLabel, hostBox, layoutLabel, layoutBox, captureButton, status });
+        ActiveControl = captureButton;
 
         // 入力欄以外をクリックしたら、フォーカスを送信チェックに戻して横取りを再開する
-        MouseDown += (_, _) => ActiveControl = capture;
-        status.MouseDown += (_, _) => ActiveControl = capture;
-        hostLabel.MouseDown += (_, _) => ActiveControl = capture;
-        layoutLabel.MouseDown += (_, _) => ActiveControl = capture;
+        MouseDown += (_, _) => ActiveControl = captureButton;
+        status.MouseDown += (_, _) => ActiveControl = captureButton;
+        hostLabel.MouseDown += (_, _) => ActiveControl = captureButton;
+        layoutLabel.MouseDown += (_, _) => ActiveControl = captureButton;
 
         Deactivate += (_, _) => sender?.ReleaseAll();   // フォーカスを失ったらキーを押したままにしない
         FormClosing += (_, _) => StopSending();
@@ -127,16 +128,16 @@ internal sealed class MainForm : Form
         settings.Jis = jis;
         settings.Save();
 
+        var wasConnected = sender != null;
         StopSending();
-        if (capture.Checked) StartSending();
-        else if (error != null) capture.Checked = true;   // 前回の開始に失敗していたなら、直した設定で再開する
+        if (wasConnected) StartSending();
     }
 
     /// <summary>設定を反映して、フォーカスを送信チェックに戻す(=横取りを再開する)。</summary>
     private void ApplyAndReturnFocus()
     {
         Apply();
-        ActiveControl = capture;
+        ActiveControl = captureButton;
     }
 
     /// <summary>現在の設定で送信を開始する。宛先を解決できなければ停止状態にしてエラーを表示する。</summary>
@@ -153,7 +154,7 @@ internal sealed class MainForm : Form
         catch (Exception ex) when (ex is SocketException or ArgumentException or InvalidOperationException)
         {
             error = $"宛先を解決できません: {settings.Host}";
-            capture.Checked = false;
+            sender = null;
         }
         UpdateStatus();
     }
@@ -179,9 +180,8 @@ internal sealed class MainForm : Form
     private void UpdateStatus()
     {
         string state = error
-            ?? (sender == null ? "停止中"
-            : editing ? "入力欄の編集中(キーは PC に入力される)"
-            : "送信中");
+            ?? (sender == null ? "停止中" : "送信中");
         status.Text = $"→ {settings.Host}:{BridgeSender.Port}\n{state}\n{sender?.HeldSummary}";
+        captureButton.Text = sender != null ? "接続を閉じる" : "接続する";
     }
 }
