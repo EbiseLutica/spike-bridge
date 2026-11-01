@@ -21,6 +21,7 @@ static const uint16_t UDP_PORT = 9000;
 static const uint8_t  MAGIC = 0xA5;
 static const uint32_t HOLD_TIMEOUT_MS = 500;
 static const uint32_t WIFI_RETRY_MS = 10000;
+static const uint32_t BLINK_MS = 50;
 
 static const uint8_t desc_hid_report[] = { TUD_HID_REPORT_DESC_KEYBOARD() };
 static Adafruit_USBD_HID usb_hid;
@@ -31,6 +32,8 @@ static uint8_t sent[8];     // ホストに通知済みの状態
 static uint32_t lastRx = 0;
 static uint32_t lastWifiTry = 0;
 static bool udpUp = false;
+static uint32_t blinkUntil = 0;  // この時刻まで LED を消す(キー受信の表示)
+static bool ledOn = false;
 
 /// desired が sent と異なれば USB ホストへ送る。
 static void pushHid() {
@@ -46,6 +49,31 @@ static void pushHid() {
 static void releaseAll() {
   memset(desired, 0, sizeof(desired));
   pushHid();
+}
+
+/// next (modifier, 予約, key0..key5) に、desired で押されていないキーか修飾キーが含まれるか。
+static bool hasNewPress(const uint8_t* next) {
+  if (next[0] & ~desired[0]) return true;
+  for (uint8_t i = 2; i < 8; i++) {
+    if (next[i] && !memchr(desired + 2, next[i], 6)) return true;
+  }
+  return false;
+}
+
+/// LED を切り替える。Pico W の LED は CYW43 経由で通信が発生するので、変化した時だけ書く。
+static void setLed(bool on) {
+  if (on == ledOn) return;
+  ledOn = on;
+  digitalWrite(LED_BUILTIN, on ? HIGH : LOW);
+}
+
+/// 状態に応じて LED を更新する。未接続なら消灯、キー受信直後は一瞬消灯、それ以外は点灯。
+static void updateLed(bool up) {
+  if (!up) {
+    setLed(false);
+  } else {
+    setLed((int32_t)(millis() - blinkUntil) >= 0);
+  }
 }
 
 /// USB HID キーボードの初期化と Wi-Fi 接続の開始。
@@ -86,7 +114,6 @@ void loop() {
       WiFi.begin(WIFI_SSID, WIFI_PASS);
     }
   }
-  digitalWrite(LED_BUILTIN, up ? HIGH : LOW);
 
   // IP をいつでも確認できるよう、状態をシリアルに定期出力する
   static uint32_t lastStat = 0;
@@ -105,11 +132,14 @@ void loop() {
     uint8_t buf[16];
     const int len = udp.read(buf, sizeof(buf));
     if (len == 9 && buf[0] == MAGIC) {
+      buf[2] = 0;  // 予約バイト
+      // 追送・ハートビート・離上では光らせず、新たな押下があった時だけ一瞬消灯する
+      if (hasNewPress(buf + 1)) blinkUntil = millis() + BLINK_MS;
       memcpy(desired, buf + 1, 8);
-      desired[1] = 0;
       lastRx = millis();
     }
   }
+  updateLed(up);
 
   // キー押下中にパケットが途絶えたら全キーを離す
   bool anyDown = false;
