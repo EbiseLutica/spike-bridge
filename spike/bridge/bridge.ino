@@ -22,6 +22,10 @@ static const uint8_t  MAGIC = 0xA5;
 static const uint32_t HOLD_TIMEOUT_MS = 500;
 static const uint32_t WIFI_RETRY_MS = 10000;
 static const uint32_t BLINK_MS = 50;
+static const uint32_t IDLE_TIMEOUT_MS = 5 * 60 * 1000;// 受信がこの時間途絶えたら低電力モードへ
+static const uint32_t LOW_POWER_LOOP_MS = 10;           // 低電力中の loop() の休止時間
+static const uint32_t LOW_POWER_BLINK_PERIOD_MS = 2000;
+static const uint32_t LOW_POWER_BLINK_ON_MS = 100;
 
 static const uint8_t desc_hid_report[] = { TUD_HID_REPORT_DESC_KEYBOARD() };
 static Adafruit_USBD_HID usb_hid;
@@ -29,9 +33,10 @@ static WiFiUDP udp;
 
 static uint8_t desired[8];  // modifier, 予約, key0..key5(PC が望む状態)
 static uint8_t sent[8];     // ホストに通知済みの状態
-static uint32_t lastRx = 0;
+static uint32_t lastRx = 0;  // 最後に有効なパケットを受信した時刻
 static uint32_t lastWifiTry = 0;
 static bool udpUp = false;
+static bool lowPower = false;
 static uint32_t blinkUntil = 0;  // この時刻まで LED を消す(キー受信の表示)
 static bool ledOn = false;
 
@@ -67,10 +72,25 @@ static void setLed(bool on) {
   digitalWrite(LED_BUILTIN, on ? HIGH : LOW);
 }
 
-/// 状態に応じて LED を更新する。未接続なら消灯、キー受信直後は一瞬消灯、それ以外は点灯。
+/// 低電力モードを切り替える。低電力中は Wi-Fi の省電力を有効にし、loop() を休ませる。
+static void setLowPower(bool on) {
+  if (on == lowPower) return;
+  lowPower = on;
+  if (on) {
+    WiFi.defaultLowPowerMode();
+  } else {
+    WiFi.noLowPowerMode();
+  }
+  Serial.println(on ? "enter low power mode" : "leave low power mode");
+}
+
+/// 状態に応じて LED を更新する。
+/// 未接続なら消灯、低電力中はゆっくり点滅、キー押下直後は一瞬消灯、それ以外は点灯。
 static void updateLed(bool up) {
   if (!up) {
     setLed(false);
+  } else if (lowPower) {
+    setLed(millis() % LOW_POWER_BLINK_PERIOD_MS < LOW_POWER_BLINK_ON_MS);
   } else {
     setLed((int32_t)(millis() - blinkUntil) >= 0);
   }
@@ -103,6 +123,8 @@ void loop() {
     Serial.print(WiFi.localIP());
     Serial.print(':');
     Serial.println(UDP_PORT);
+    // WiFi.begin() が省電力を切るので、低電力中なら掛け直す
+    if (lowPower) WiFi.defaultLowPowerMode();
   } else if (!up) {
     if (udpUp) {
       udp.stop();
@@ -137,8 +159,10 @@ void loop() {
       if (hasNewPress(buf + 1)) blinkUntil = millis() + BLINK_MS;
       memcpy(desired, buf + 1, 8);
       lastRx = millis();
+      setLowPower(false);
     }
   }
+  if (up && millis() - lastRx > IDLE_TIMEOUT_MS) setLowPower(true);
   updateLed(up);
 
   // キー押下中にパケットが途絶えたら全キーを離す
@@ -151,4 +175,7 @@ void loop() {
   }
 
   pushHid();
+
+  // 低電力中は CPU を休ませる。TinyUSB のタスクは loop() 後の yield() で回るので USB は維持される
+  if (lowPower) delay(LOW_POWER_LOOP_MS);
 }
