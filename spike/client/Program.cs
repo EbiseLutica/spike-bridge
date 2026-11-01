@@ -7,22 +7,22 @@ internal static class Program
 {
     /// <summary>
     /// 使い方: SpikeClient.exe [ホストまたはIP] [--jis]
-    ///   ホスト省略時はブロードキャスト(255.255.255.255)で送る。Pico の IP を指定したほうが低遅延。
+    /// 保存済みの設定を読み、コマンドライン引数があればそちらを優先する。
+    ///   ホスト: Pico の IP。初期値はブロードキャスト(255.255.255.255)だが、IP 指定のほうが低遅延。
     ///   --jis: PC が JIS キーボードのとき指定する(\ キーの割り当てと半角/全角の扱いが変わる)。
     /// </summary>
     [STAThread]
     private static void Main(string[] args)
     {
-        string host = "255.255.255.255";
-        bool jis = false;
+        var settings = AppSettings.Load();
         foreach (var a in args)
         {
-            if (a.Equals("--jis", StringComparison.OrdinalIgnoreCase)) jis = true;
-            else host = a;
+            if (a.Equals("--jis", StringComparison.OrdinalIgnoreCase)) settings.Jis = true;
+            else settings.Host = a;
         }
 
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
-        Application.Run(new MainForm(host, jis));
+        Application.Run(new MainForm(settings));
     }
 }

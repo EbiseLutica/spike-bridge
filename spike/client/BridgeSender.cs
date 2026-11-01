@@ -51,6 +51,9 @@ internal sealed class BridgeSender : IDisposable
     /// <summary>ホスト名または IP 文字列から、Pico W の送信先を作る。</summary>
     public static IPEndPoint CreateEndpoint(string host)
     {
+        // 空文字を渡すと Dns が自分自身のアドレスを返してしまうので弾く
+        if (string.IsNullOrWhiteSpace(host)) throw new ArgumentException("host is empty", nameof(host));
+
         var addrs = IPAddress.TryParse(host, out var parsed)
             ? new[] { parsed }
             : Dns.GetHostAddresses(host);
